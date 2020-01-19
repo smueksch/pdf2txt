@@ -1,0 +1,129 @@
+#!/usr/local/bin/python3
+
+import os
+import sys
+import argparse
+
+# Add directories for required custom modules.
+try:
+    sys.path.index(os.path.join(os.path.dirname(__file__), 'src'))
+except ValueError:
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+try:
+    sys.path.index(os.path.join(os.path.dirname(__file__), 'src', 'postprocessors'))
+except ValueError:
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'postprocessors'))
+
+try:
+    sys.path.index(os.path.join(os.path.dirname(__file__), 'src', 'flaggers'))
+except ValueError:
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'flaggers'))
+
+from pdfextractor import PDFExtractor
+import time
+import postprocessors
+import flaggers
+
+
+# TODO: Make the print output nicer, closer to 'pdf2txt -h' output.
+def print_post_processors_flaggers() -> None:
+    """ Print all post-processors and flaggers and exit.
+
+    Print all available post-processors and flaggers to stdout and exit.
+
+    The format will be as follows:
+
+        Post-processors:
+        PP1Name: PP1Desc
+        ...
+
+        Flaggers:
+        Flag1Name: Flag1Desc
+
+    Prints 'None' if no post-processors/flaggers available.
+    """
+    out = 'Post-processors:\n'
+    if len(postprocessors.post_processors) == 0:
+        out = out + 'None\n'
+    else:
+        for pp in postprocessors.post_processors.values():
+            out = out + '  ' + pp.name + '\t' + pp.desc + '\n'
+
+    out = out + '\nFlaggers:\n'
+    if len(flaggers.flaggers) == 0:
+        out = out + 'None\n'
+    else:
+        for f in flaggers.flaggers.values():
+            out = out + '  ' + f.name + '\t' + f.desc + '\n'
+
+    print(out[:-1])  # Remove last newline.
+    sys.exit()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+
+    # Define command line arguments.
+    parser.add_argument('-i', type=str, help='path to input file')
+    parser.add_argument('-o', type=str, help='path to output file')
+    parser.add_argument('-f', action='store_true', help='force writing to output file')
+    parser.add_argument('-l', action='store_true', help='list post-processors' +
+                                                        ' and flaggers')
+    parser.add_argument('-p', type=str, help='post-processors to run in given order , comma separated')
+    parser.add_argument('-g', type=str, help='flaggers to run in given order , comma separated')
+
+    args = parser.parse_args()
+
+    if args.l:
+        print_post_processors_flaggers()
+
+    # Select post-processors to be run.
+    pp_names = args.p.split(',') if args.p else []
+    post_processors = []
+    for name in pp_names:
+        try:
+            post_processors.append(postprocessors.post_processors[name])
+        except KeyError:
+            print('WARNING: Unknown post-processor <{}>'.format(name),
+                  file=sys.stderr, flush=True)
+
+    # Select flaggers to be run.
+    flagger_names = args.g.split(',') if args.g else []
+    flgs = []  # Flaggers to be run.
+    for name in flagger_names:
+        try:
+            flgs.append(flaggers.flaggers[name])
+        except KeyError:
+            print('WARNING: Unknown flagger <{}>'.format(name), file=sys.stderr,
+                  flush=True)
+
+#    post_processors = [HeaderFooterRemover(),
+#                       #DoubleNewlineFixer(),
+#                       QuotationFixer(),
+#                       #HyphenFixer(),
+#                       FootnoteRemover(),
+#                       NumberOnlyLineRemover(),
+#                       WordNumFixer(),
+#                       ExcessiveNewlineRemover(),
+#                       EOLSpaceRemover()]
+#    flaggers = [NumberFlagger(),
+#                FootnoteFlagger(),
+#                StrayLetterFlagger()]
+
+    extractor = PDFExtractor(in_=args.i, out=args.o,
+                             post_processors=post_processors,
+                             flaggers=flgs)
+
+    start_time = time.perf_counter()
+
+    extractor.extract()
+    extractor.write(force=args.f)
+
+    end_time = time.perf_counter()
+    elapsed_time = round(end_time - start_time, 2)
+    print('Finished after {t}s.'.format(t=elapsed_time))
+
+
+if __name__ == '__main__':
+    main()
